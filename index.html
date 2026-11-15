@@ -18,17 +18,7 @@
       min-height: 297mm;
       padding: 16mm 18mm;
       box-sizing: border-box;
-    }
-
-    #preview-area.pdf-exporting {
-      height: 296.5mm !important;
-      min-height: 296.5mm !important;
-      max-height: 296.5mm !important;
-      overflow: hidden !important;
-      box-shadow: none !important;
-      border: none !important;
-      border-radius: 0 !important;
-      margin: 0 !important;
+      background: #ffffff;
     }
 
     @media print {
@@ -289,6 +279,31 @@
     </div>
   </div>
 
+  <!-- Modal Confirmación de Borrado -->
+  <div id="modalConfirmDelete" class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[60] hidden flex items-center justify-center p-4 no-print">
+    <div class="bg-white rounded-2xl max-w-sm w-full p-6 shadow-2xl space-y-4 border border-red-100">
+      <div class="flex items-center space-x-3 text-red-600">
+        <div class="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center shrink-0">
+          <i class="fa-solid fa-triangle-exclamation text-lg"></i>
+        </div>
+        <div>
+          <h3 class="font-bold text-slate-900 text-sm">¿Eliminar documento?</h3>
+          <p class="text-xs text-slate-500">Esta acción lo enviará a la papelera de Drive.</p>
+        </div>
+      </div>
+      <p class="text-xs text-slate-600 bg-slate-50 p-3 rounded-lg border border-slate-200">
+        Vas a borrar permanentemente del historial y de Google Drive el documento <strong id="deleteDocNumLabel" class="font-mono text-slate-900"></strong>.
+      </p>
+      <div class="flex justify-end space-x-2 pt-2">
+        <button onclick="cerrarConfirmDelete()" id="btnCancelDelete" class="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-lg">Cancelar</button>
+        <button onclick="ejecutarBorradoDocumento()" id="btnConfirmDelete" class="px-4 py-2 text-xs font-semibold bg-red-600 hover:bg-red-700 text-white rounded-lg flex items-center space-x-1.5">
+          <i class="fa-solid fa-trash-can"></i>
+          <span>Sí, borrar</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
   <script>
     const DEFAULT_CONFIG = {
       nombre: "Tu Nombre Autónomo",
@@ -305,6 +320,7 @@
 
     let baseFacturas = JSON.parse(localStorage.getItem("facturas_db") || "[]");
     let basePresupuestos = JSON.parse(localStorage.getItem("presupuestos_db") || "[]");
+    let docParaBorrar = null;
 
     window.addEventListener("DOMContentLoaded", () => {
       document.getElementById("docFecha").valueAsDate = new Date();
@@ -455,13 +471,35 @@
       btn.disabled = true;
       btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> <span>Generando PDF...</span>`;
 
+      // Creamos un contenedor limpio fuera del grid para evitar desplazamientos de html2canvas
+      const exportWrapper = document.createElement("div");
+      exportWrapper.style.position = "fixed";
+      exportWrapper.style.left = "0";
+      exportWrapper.style.top = "0";
+      exportWrapper.style.width = "210mm";
+      exportWrapper.style.height = "297mm";
+      exportWrapper.style.background = "#ffffff";
+      exportWrapper.style.zIndex = "-9999";
+      exportWrapper.style.overflow = "hidden";
+
+      const clone = preview.cloneNode(true);
+      clone.style.width = "210mm";
+      clone.style.height = "297mm";
+      clone.style.minHeight = "297mm";
+      clone.style.maxHeight = "297mm";
+      clone.style.margin = "0";
+      clone.style.boxShadow = "none";
+      clone.style.border = "none";
+      clone.style.borderRadius = "0";
+
+      exportWrapper.appendChild(clone);
+      document.body.appendChild(exportWrapper);
+
       try {
         const docNum = document.getElementById("docNumero").value || "documento";
         const filename = `${docNum}.pdf`;
 
-        preview.classList.add("pdf-exporting");
-
-        const pdfBase64 = await html2pdf().from(preview).set({
+        const pdfBase64 = await html2pdf().from(clone).set({
           margin: 0,
           filename: filename,
           image: { type: 'jpeg', quality: 0.98 },
@@ -470,13 +508,15 @@
             useCORS: true,
             scrollX: 0,
             scrollY: 0,
-            windowWidth: 794
+            x: 0,
+            y: 0,
+            width: clone.offsetWidth,
+            height: clone.offsetHeight
           },
-          jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
-          pagebreak: { mode: ['avoid-all', 'css', 'legacy'] }
+          jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
         }).outputPdf('datauristring');
 
-        preview.classList.remove("pdf-exporting");
+        document.body.removeChild(exportWrapper);
 
         btn.innerHTML = `<i class="fa-solid fa-cloud-arrow-up fa-beat"></i> <span>Guardando en Drive...</span>`;
 
@@ -495,6 +535,7 @@
         };
 
         const payload = {
+          action: "save",
           filename: filename,
           pdfBase64: pdfBase64,
           docData: docData
@@ -521,7 +562,9 @@
         recalcularNumeroActual();
 
       } catch (err) {
-        preview.classList.remove("pdf-exporting");
+        if (document.body.contains(exportWrapper)) {
+          document.body.removeChild(exportWrapper);
+        }
         alert("Error al subir a Google Drive: " + err.message);
       } finally {
         btn.disabled = false;
@@ -529,6 +572,7 @@
       }
     }
 
+    // --- HISTORIAL Y BORRADO CON CONFIRMACIÓN ---
     function abrirHistorialModal() {
       const container = document.getElementById("historialListContainer");
       container.innerHTML = "";
@@ -539,7 +583,7 @@
       } else {
         todos.reverse().forEach(d => {
           const div = document.createElement("div");
-          div.className = "flex items-center justify-between p-3 border rounded-lg bg-slate-50";
+          div.className = "flex items-center justify-between p-3 border rounded-lg bg-slate-50 hover:bg-slate-100/70 transition";
           div.innerHTML = `
             <div>
               <span class="font-bold text-slate-800 font-mono">${d.numero}</span>
@@ -547,8 +591,13 @@
               <p class="text-slate-600 font-medium">${d.cliente?.nombre || 'Cliente sin nombre'}</p>
             </div>
             <div class="flex items-center space-x-2">
-              <span class="font-bold font-mono text-indigo-700">${d.total || ''}</span>
-              <button onclick="cargarDocumento('${d.numero}')" class="px-2.5 py-1 bg-white border border-slate-300 rounded hover:bg-slate-100 text-xs">Cargar</button>
+              <span class="font-bold font-mono text-indigo-700 mr-2">${d.total || ''}</span>
+              <button onclick="cargarDocumento('${d.numero}')" class="px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg hover:bg-slate-100 text-xs font-medium text-slate-700">
+                Cargar
+              </button>
+              <button onclick="pedirConfirmacionBorrado('${d.numero}')" title="Eliminar de la app y de Drive" class="px-2.5 py-1.5 bg-red-50 border border-red-200 rounded-lg hover:bg-red-100 text-xs font-medium text-red-600 transition">
+                <i class="fa-solid fa-trash-can"></i>
+              </button>
             </div>
           `;
           container.appendChild(div);
@@ -559,6 +608,58 @@
 
     function cerrarHistorialModal() {
       document.getElementById("modalHistorial").classList.add("hidden");
+    }
+
+    function pedirConfirmacionBorrado(numero) {
+      docParaBorrar = numero;
+      document.getElementById("deleteDocNumLabel").innerText = numero;
+      document.getElementById("modalConfirmDelete").classList.remove("hidden");
+    }
+
+    function cerrarConfirmDelete() {
+      docParaBorrar = null;
+      document.getElementById("modalConfirmDelete").classList.add("hidden");
+    }
+
+    async function ejecutarBorradoDocumento() {
+      if (!docParaBorrar) return;
+      const num = docParaBorrar;
+      const btnConfirm = document.getElementById("btnConfirmDelete");
+      const btnCancel = document.getElementById("btnCancelDelete");
+      const originalHtml = btnConfirm.innerHTML;
+
+      btnConfirm.disabled = true;
+      btnCancel.disabled = true;
+      btnConfirm.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> <span>Borrando...</span>`;
+
+      try {
+        if (CONFIG.appsScriptUrl) {
+          await fetch(CONFIG.appsScriptUrl, {
+            method: 'POST',
+            mode: 'no-cors',
+            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+            body: JSON.stringify({
+              action: "delete",
+              numero: num
+            })
+          });
+        }
+
+        baseFacturas = baseFacturas.filter(f => f.numero !== num);
+        basePresupuestos = basePresupuestos.filter(p => p.numero !== num);
+        localStorage.setItem("facturas_db", JSON.stringify(baseFacturas));
+        localStorage.setItem("presupuestos_db", JSON.stringify(basePresupuestos));
+
+        cerrarConfirmDelete();
+        abrirHistorialModal(); // Refresca la lista
+        recalcularNumeroActual();
+      } catch (err) {
+        alert("Error al borrar el documento: " + err.message);
+      } finally {
+        btnConfirm.disabled = false;
+        btnCancel.disabled = false;
+        btnConfirm.innerHTML = originalHtml;
+      }
     }
 
     function cargarDocumento(numero) {
