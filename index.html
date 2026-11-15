@@ -1,0 +1,605 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Facturas y Presupuestos</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <style>
+    @page {
+      size: A4 portrait;
+      margin: 0;
+    }
+
+    #preview-area {
+      width: 210mm;
+      min-height: 297mm;
+      padding: 16mm 18mm;
+      box-sizing: border-box;
+    }
+
+    #preview-area.pdf-exporting {
+      height: 296.5mm !important;
+      min-height: 296.5mm !important;
+      max-height: 296.5mm !important;
+      overflow: hidden !important;
+      box-shadow: none !important;
+      border: none !important;
+      border-radius: 0 !important;
+      margin: 0 !important;
+    }
+
+    @media print {
+      html, body {
+        width: 210mm;
+        height: 297mm;
+        margin: 0 !important;
+        padding: 0 !important;
+        background: #ffffff !important;
+      }
+      body * { visibility: hidden; }
+      #preview-area, #preview-area * { visibility: visible; }
+      #preview-area {
+        position: fixed;
+        left: 0;
+        top: 0;
+        width: 210mm !important;
+        height: 297mm !important;
+        min-height: 297mm !important;
+        margin: 0 !important;
+        padding: 16mm 18mm !important;
+        box-shadow: none !important;
+        border: none !important;
+        border-radius: 0 !important;
+      }
+      .no-print { display: none !important; }
+    }
+  </style>
+</head>
+<body class="bg-slate-100 text-slate-800 font-sans antialiased min-h-screen">
+
+  <!-- Navegación superior -->
+  <header class="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-sm no-print">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
+      <div class="flex items-center space-x-3">
+        <span class="w-10 h-10 rounded-xl bg-indigo-600 text-white flex items-center justify-center font-bold text-lg shadow-md">
+          <i class="fa-solid fa-file-invoice"></i>
+        </span>
+        <div>
+          <h1 class="font-bold text-slate-900 leading-tight">Facturación Autónomo</h1>
+          <p class="text-xs text-slate-500" id="syncStatus">
+            <i class="fa-solid fa-cloud"></i> Sincronizado con Drive
+          </p>
+        </div>
+      </div>
+
+      <div class="flex items-center space-x-2">
+        <button id="btnSyncDrive" onclick="sincronizarConDrive(true)" class="text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 px-3 py-2 rounded-lg font-medium transition flex items-center space-x-1.5" title="Recargar datos de Drive">
+          <i class="fa-solid fa-rotate" id="syncSpinner"></i>
+          <span class="hidden sm:inline">Sincronizar</span>
+        </button>
+        <button onclick="abrirHistorialModal()" class="text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 px-3 py-2 rounded-lg font-medium transition flex items-center space-x-1.5">
+          <i class="fa-solid fa-folder-open text-indigo-500"></i>
+          <span>Historial</span>
+        </button>
+        <button onclick="abrirConfigModal()" class="text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 px-3 py-2 rounded-lg font-medium transition flex items-center space-x-1.5" title="Ajustes de emisor">
+          <i class="fa-solid fa-gear"></i>
+          <span class="hidden sm:inline">Ajustes</span>
+        </button>
+        <button onclick="window.print()" class="text-xs bg-slate-700 hover:bg-slate-800 text-white px-3 py-2 rounded-lg font-medium shadow-sm transition flex items-center space-x-1.5">
+          <i class="fa-solid fa-print"></i>
+          <span>Imprimir / PDF</span>
+        </button>
+        <button id="btnUploadDrive" onclick="guardarYSubirADrive()" class="text-xs bg-indigo-600 hover:bg-indigo-700 text-white px-3.5 py-2 rounded-lg font-semibold shadow-md transition flex items-center space-x-1.5">
+          <i class="fa-brands fa-google-drive"></i>
+          <span>Guardar en Drive</span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Contenido principal -->
+  <main class="max-w-7xl mx-auto px-4 sm:px-6 py-6 grid grid-cols-1 lg:grid-cols-12 gap-6">
+
+    <!-- Formulario / Editor (Izquierda) -->
+    <section class="lg:col-span-5 space-y-4 no-print">
+      
+      <!-- Selector de Tipo y Número -->
+      <div class="bg-white rounded-xl border border-slate-200 p-4 shadow-sm space-y-3">
+        <div class="flex items-center justify-between">
+          <span class="text-xs font-semibold uppercase tracking-wider text-slate-500">Tipo de Documento</span>
+          <div class="inline-flex rounded-lg bg-slate-100 p-0.5">
+            <button id="tabFactura" onclick="setDocTipo('factura')" class="px-3 py-1 rounded-md text-xs font-semibold transition bg-white text-indigo-600 shadow-sm">Factura</button>
+            <button id="tabPresupuesto" onclick="setDocTipo('presupuesto')" class="px-3 py-1 rounded-md text-xs font-semibold text-slate-500 hover:text-slate-800 transition">Presupuesto</button>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs font-medium text-slate-600 mb-1">Nº Documento</label>
+            <div class="relative">
+              <input type="text" id="docNumero" class="w-full text-xs border border-slate-300 rounded-lg p-2 font-mono font-semibold focus:ring-2 focus:ring-indigo-500 focus:outline-none" oninput="actualizarPreview()">
+              <button onclick="recalcularNumeroActual()" title="Recalcular siguiente número correlativo" class="absolute right-2 top-2 text-slate-400 hover:text-indigo-600 text-xs">
+                <i class="fa-solid fa-arrows-rotate"></i>
+              </button>
+            </div>
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-slate-600 mb-1">Fecha de Emisión</label>
+            <input type="date" id="docFecha" class="w-full text-xs border border-slate-300 rounded-lg p-2 focus:ring-2 focus:ring-indigo-500 focus:outline-none" onchange="actualizarPreview()">
+          </div>
+        </div>
+      </div>
+
+      <!-- Datos del Cliente -->
+      <div class="bg-white rounded-xl border border-slate-200 p-4 shadow-sm space-y-3">
+        <div class="flex items-center justify-between">
+          <span class="text-xs font-semibold uppercase tracking-wider text-slate-500">Datos del Cliente</span>
+        </div>
+        <div class="space-y-2">
+          <input type="text" id="cliNombre" placeholder="Nombre / Razón Social" class="w-full text-xs border border-slate-300 rounded-lg p-2 focus:ring-2 focus:ring-indigo-500 focus:outline-none" oninput="actualizarPreview()">
+          <div class="grid grid-cols-3 gap-2">
+            <input type="text" id="cliNif" placeholder="NIF / CIF" class="col-span-1 text-xs border border-slate-300 rounded-lg p-2 focus:ring-2 focus:ring-indigo-500 focus:outline-none uppercase" oninput="actualizarPreview()">
+            <input type="text" id="cliDireccion" placeholder="Dirección fiscal" class="col-span-2 text-xs border border-slate-300 rounded-lg p-2 focus:ring-2 focus:ring-indigo-500 focus:outline-none" oninput="actualizarPreview()">
+          </div>
+        </div>
+      </div>
+
+      <!-- Líneas de Conceptos -->
+      <div class="bg-white rounded-xl border border-slate-200 p-4 shadow-sm space-y-3">
+        <div class="flex items-center justify-between">
+          <span class="text-xs font-semibold uppercase tracking-wider text-slate-500">Conceptos</span>
+          <button onclick="agregarLinea()" class="text-xs bg-indigo-50 hover:bg-indigo-100 text-indigo-700 px-2.5 py-1 rounded-lg font-medium transition flex items-center space-x-1">
+            <i class="fa-solid fa-plus text-[10px]"></i>
+            <span>Añadir concepto</span>
+          </button>
+        </div>
+
+        <div id="lineasContainer" class="space-y-2.5">
+          <!-- Las líneas se inyectan dinámicamente -->
+        </div>
+
+        <div class="pt-3 border-t border-slate-100 flex items-center justify-between text-xs">
+          <span class="font-medium text-slate-600">Tipo de IVA aplicable:</span>
+          <select id="ivaSelect" onchange="actualizarPreview()" class="border border-slate-300 rounded-lg p-1.5 font-semibold text-slate-700 focus:ring-2 focus:ring-indigo-500">
+            <option value="21">21% (General)</option>
+            <option value="10">10% (Reducido)</option>
+            <option value="4">4% (Superreducido)</option>
+            <option value="0">0% (Exento)</option>
+          </select>
+        </div>
+      </div>
+
+    </section>
+
+    <!-- Vista Previa / Factura A4 (Derecha) -->
+    <section class="lg:col-span-7 flex justify-center overflow-x-auto pb-4">
+      <div id="preview-area" class="bg-white rounded-xl border border-slate-200 shadow-lg text-slate-800 text-xs flex flex-col justify-between shrink-0">
+        
+        <div>
+          <!-- Cabecera de la factura -->
+          <div class="flex justify-between items-start border-b border-slate-200 pb-6 mb-6">
+            <div>
+              <h2 id="prevDocTipo" class="text-2xl font-black tracking-tight text-slate-900 uppercase">FACTURA</h2>
+              <div class="mt-2 space-y-0.5 text-slate-600">
+                <p><span class="font-semibold text-slate-700">Nº:</span> <span id="prevDocNumero" class="font-mono font-bold text-slate-900">FAC-2026-001</span></p>
+                <p><span class="font-semibold text-slate-700">Fecha:</span> <span id="prevDocFecha">08/11/2026</span></p>
+              </div>
+            </div>
+
+            <!-- Datos Emisor -->
+            <div class="text-right space-y-0.5 text-slate-600 max-w-[55%]">
+              <h3 id="prevEmisorNombre" class="font-bold text-sm text-slate-900">Tu Nombre Autónomo</h3>
+              <p id="prevEmisorNif">NIF: 12345678Z</p>
+              <p id="prevEmisorDir">Valencia, España</p>
+            </div>
+          </div>
+
+          <!-- Cliente -->
+          <div class="bg-slate-50 border border-slate-100 rounded-lg p-4 mb-6">
+            <span class="text-[10px] uppercase font-bold tracking-wider text-slate-400 block mb-1">Destinatario / Cliente</span>
+            <h4 id="prevCliNombre" class="font-bold text-slate-900 text-sm">Cliente no especificado</h4>
+            <p id="prevCliNif" class="text-slate-600">NIF: -</p>
+            <p id="prevCliDir" class="text-slate-600">Dirección: -</p>
+          </div>
+
+          <!-- Tabla de Conceptos -->
+          <table class="w-full text-left mb-6 table-fixed">
+            <thead>
+              <tr class="border-b border-slate-300 text-slate-400 uppercase text-[10px] font-semibold">
+                <th class="py-2 w-auto">Descripción</th>
+                <th class="py-2 text-right w-14">Uds.</th>
+                <th class="py-2 text-right w-24">Precio</th>
+                <th class="py-2 text-right w-24">Subtotal</th>
+              </tr>
+            </thead>
+            <tbody id="prevConceptosTbody" class="divide-y divide-slate-100 text-slate-700">
+              <!-- Render dinámico -->
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Totales -->
+        <div class="border-t border-slate-200 pt-4 flex justify-end mt-auto">
+          <div class="w-64 space-y-2">
+            <div class="flex justify-between text-slate-600">
+              <span>Base Imponible:</span>
+              <span id="prevSubtotal" class="font-semibold font-mono">0,00 €</span>
+            </div>
+            <div class="flex justify-between text-slate-600">
+              <span>IVA (<span id="prevIvaPorc">21</span>%):</span>
+              <span id="prevIvaTotal" class="font-semibold font-mono">0,00 €</span>
+            </div>
+            <div class="flex justify-between text-slate-900 border-t border-slate-300 pt-2 text-sm font-bold">
+              <span>TOTAL:</span>
+              <span id="prevTotal" class="text-base text-indigo-700 font-mono">0,00 €</span>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Modal Ajustes / Emisor -->
+  <div id="modalConfig" class="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4 no-print">
+    <div class="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl space-y-4">
+      <div class="flex justify-between items-center border-b pb-3">
+        <h3 class="font-bold text-slate-900 text-base">Configuración y Datos de Emisor</h3>
+        <button onclick="cerrarConfigModal()" class="text-slate-400 hover:text-slate-600"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+      <div class="space-y-3 text-xs">
+        <div>
+          <label class="block font-medium text-slate-600 mb-1">Tu Nombre o Nombre Comercial</label>
+          <input type="text" id="cfgNombre" class="w-full border rounded-lg p-2">
+        </div>
+        <div>
+          <label class="block font-medium text-slate-600 mb-1">Tu NIF / CIF</label>
+          <input type="text" id="cfgNif" class="w-full border rounded-lg p-2 uppercase">
+        </div>
+        <div>
+          <label class="block font-medium text-slate-600 mb-1">Tu Dirección Fiscal Completa</label>
+          <input type="text" id="cfgDir" class="w-full border rounded-lg p-2">
+        </div>
+        <div>
+          <label class="block font-medium text-slate-600 mb-1">URL de Google Apps Script</label>
+          <input type="text" id="cfgUrl" class="w-full border rounded-lg p-2 text-slate-600 font-mono text-[11px]" placeholder="https://script.google.com/macros/s/.../exec">
+        </div>
+      </div>
+      <div class="pt-2 flex justify-end space-x-2">
+        <button onclick="cerrarConfigModal()" class="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-lg">Cancelar</button>
+        <button onclick="guardarConfig()" class="px-4 py-2 text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg">Guardar Cambios</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal Historial Documentos -->
+  <div id="modalHistorial" class="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4 no-print">
+    <div class="bg-white rounded-2xl max-w-2xl w-full p-6 shadow-xl space-y-4 max-h-[85vh] flex flex-col">
+      <div class="flex justify-between items-center border-b pb-3">
+        <h3 class="font-bold text-slate-900 text-base">Historial Centralizado</h3>
+        <button onclick="cerrarHistorialModal()" class="text-slate-400 hover:text-slate-600"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+      <div class="flex-1 overflow-y-auto space-y-2 text-xs" id="historialListContainer">
+        <!-- Render dinámico de documentos guardados -->
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const DEFAULT_CONFIG = {
+      nombre: "Tu Nombre Autónomo",
+      nif: "12345678Z",
+      direccion: "Valencia, España",
+      appsScriptUrl: "https://script.google.com/macros/s/AKfycbzzFYi10gbs_3wG1eRSnebA0WJ7HPgJ7cD4xdjLWfBzFICmbjL72DsTcL6sS2UxbGc7/exec"
+    };
+
+    let CONFIG = JSON.parse(localStorage.getItem("app_cfg")) || DEFAULT_CONFIG;
+    let docTipoActual = "factura";
+    let lineas = [
+      { descripcion: "Servicios profesionales de consultoría", cantidad: 1, precio: 150 }
+    ];
+
+    let baseFacturas = JSON.parse(localStorage.getItem("facturas_db") || "[]");
+    let basePresupuestos = JSON.parse(localStorage.getItem("presupuestos_db") || "[]");
+
+    window.addEventListener("DOMContentLoaded", () => {
+      document.getElementById("docFecha").valueAsDate = new Date();
+      cargarConfigEnUI();
+      renderLineas();
+      sincronizarConDrive(false);
+      recalcularNumeroActual();
+    });
+
+    function setDocTipo(tipo) {
+      docTipoActual = tipo;
+      const tabF = document.getElementById("tabFactura");
+      const tabP = document.getElementById("tabPresupuesto");
+
+      if (tipo === "factura") {
+        tabF.className = "px-3 py-1 rounded-md text-xs font-semibold transition bg-white text-indigo-600 shadow-sm";
+        tabP.className = "px-3 py-1 rounded-md text-xs font-semibold text-slate-500 hover:text-slate-800 transition";
+        document.getElementById("prevDocTipo").innerText = "FACTURA";
+      } else {
+        tabP.className = "px-3 py-1 rounded-md text-xs font-semibold transition bg-white text-indigo-600 shadow-sm";
+        tabF.className = "px-3 py-1 rounded-md text-xs font-semibold text-slate-500 hover:text-slate-800 transition";
+        document.getElementById("prevDocTipo").innerText = "PRESUPUESTO";
+      }
+      recalcularNumeroActual();
+    }
+
+    function calcularSiguienteNumero(tipo) {
+      const year = new Date().getFullYear();
+      const prefijo = tipo === 'factura' ? `FAC-${year}-` : `PRE-${year}-`;
+      const lista = tipo === 'factura' ? baseFacturas : basePresupuestos;
+
+      let maxId = 0;
+      lista.forEach(doc => {
+        if (doc.numero && doc.numero.startsWith(prefijo)) {
+          const numPart = parseInt(doc.numero.replace(prefijo, ""), 10);
+          if (!isNaN(numPart) && numPart > maxId) maxId = numPart;
+        }
+      });
+
+      return `${prefijo}${String(maxId + 1).padStart(3, '0')}`;
+    }
+
+    function recalcularNumeroActual() {
+      document.getElementById("docNumero").value = calcularSiguienteNumero(docTipoActual);
+      actualizarPreview();
+    }
+
+    async function sincronizarConDrive(mostrarToast = false) {
+      if (!CONFIG.appsScriptUrl) return;
+      const spinner = document.getElementById("syncSpinner");
+      if (spinner) spinner.classList.add("fa-spin");
+
+      try {
+        const response = await fetch(CONFIG.appsScriptUrl);
+        const res = await response.json();
+        if (res.status === "success" && res.data) {
+          baseFacturas = res.data.facturas || [];
+          basePresupuestos = res.data.presupuestos || [];
+          localStorage.setItem("facturas_db", JSON.stringify(baseFacturas));
+          localStorage.setItem("presupuestos_db", JSON.stringify(basePresupuestos));
+          recalcularNumeroActual();
+          if (mostrarToast) alert("Datos sincronizados con Google Drive correctamente.");
+        }
+      } catch (err) {
+        console.warn("No se pudo conectar a Drive en este momento, usando datos locales.", err);
+      } finally {
+        if (spinner) spinner.classList.remove("fa-spin");
+      }
+    }
+
+    function renderLineas() {
+      const container = document.getElementById("lineasContainer");
+      container.innerHTML = "";
+
+      lineas.forEach((item, index) => {
+        const div = document.createElement("div");
+        div.className = "grid grid-cols-12 gap-2 items-center bg-slate-50 p-2 rounded-lg border border-slate-200";
+        div.innerHTML = `
+          <input type="text" value="${item.descripcion}" placeholder="Descripción" class="col-span-6 text-xs p-1.5 border rounded focus:ring-1 focus:ring-indigo-500" oninput="lineas[${index}].descripcion = this.value; actualizarPreview();">
+          <input type="number" min="1" step="1" value="${item.cantidad}" class="col-span-2 text-xs p-1.5 border rounded text-right focus:ring-1 focus:ring-indigo-500" oninput="lineas[${index}].cantidad = parseFloat(this.value) || 0; actualizarPreview();">
+          <input type="number" min="0" step="0.01" value="${item.precio}" class="col-span-3 text-xs p-1.5 border rounded text-right focus:ring-1 focus:ring-indigo-500" oninput="lineas[${index}].precio = parseFloat(this.value) || 0; actualizarPreview();">
+          <button onclick="eliminarLinea(${index})" class="col-span-1 text-slate-400 hover:text-red-500 text-center"><i class="fa-solid fa-trash-can"></i></button>
+        `;
+        container.appendChild(div);
+      });
+      actualizarPreview();
+    }
+
+    function agregarLinea() {
+      lineas.push({ descripcion: "", cantidad: 1, precio: 0 });
+      renderLineas();
+    }
+
+    function eliminarLinea(index) {
+      if (lineas.length === 1) {
+        lineas = [{ descripcion: "", cantidad: 1, precio: 0 }];
+      } else {
+        lineas.splice(index, 1);
+      }
+      renderLineas();
+    }
+
+    function actualizarPreview() {
+      document.getElementById("prevDocNumero").innerText = document.getElementById("docNumero").value || "-";
+      
+      const fechaVal = document.getElementById("docFecha").value;
+      if (fechaVal) {
+        const [y, m, d] = fechaVal.split("-");
+        document.getElementById("prevDocFecha").innerText = `${d}/${m}/${y}`;
+      }
+
+      document.getElementById("prevCliNombre").innerText = document.getElementById("cliNombre").value || "Cliente no especificado";
+      document.getElementById("prevCliNif").innerText = "NIF: " + (document.getElementById("cliNif").value || "-");
+      document.getElementById("prevCliDir").innerText = "Dirección: " + (document.getElementById("cliDireccion").value || "-");
+
+      const tbody = document.getElementById("prevConceptosTbody");
+      tbody.innerHTML = "";
+      let subtotal = 0;
+
+      lineas.forEach(l => {
+        const totalLinea = (l.cantidad || 0) * (l.precio || 0);
+        subtotal += totalLinea;
+
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td class="py-2.5 pr-3 font-medium break-words">${l.descripcion || "Sin descripción"}</td>
+          <td class="py-2.5 text-right font-mono align-top">${l.cantidad}</td>
+          <td class="py-2.5 text-right font-mono align-top">${l.precio.toFixed(2)} €</td>
+          <td class="py-2.5 text-right font-semibold font-mono align-top">${totalLinea.toFixed(2)} €</td>
+        `;
+        tbody.appendChild(tr);
+      });
+
+      const ivaPorc = parseFloat(document.getElementById("ivaSelect").value) || 0;
+      const ivaTotal = subtotal * (ivaPorc / 100);
+      const totalFinal = subtotal + ivaTotal;
+
+      document.getElementById("prevSubtotal").innerText = subtotal.toFixed(2) + " €";
+      document.getElementById("prevIvaPorc").innerText = ivaPorc;
+      document.getElementById("prevIvaTotal").innerText = ivaTotal.toFixed(2) + " €";
+      document.getElementById("prevTotal").innerText = totalFinal.toFixed(2) + " €";
+    }
+
+    async function guardarYSubirADrive() {
+      const btn = document.getElementById("btnUploadDrive");
+      const preview = document.getElementById("preview-area");
+      const originalText = btn.innerHTML;
+      btn.disabled = true;
+      btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> <span>Generando PDF...</span>`;
+
+      try {
+        const docNum = document.getElementById("docNumero").value || "documento";
+        const filename = `${docNum}.pdf`;
+
+        preview.classList.add("pdf-exporting");
+
+        const pdfBase64 = await html2pdf().from(preview).set({
+          margin: 0,
+          filename: filename,
+          image: { type: 'jpeg', quality: 0.98 },
+          html2canvas: { 
+            scale: 2, 
+            useCORS: true,
+            scrollX: 0,
+            scrollY: 0,
+            windowWidth: 794
+          },
+          jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+          pagebreak: { mode: ['avoid-all', 'css', 'legacy'] }
+        }).outputPdf('datauristring');
+
+        preview.classList.remove("pdf-exporting");
+
+        btn.innerHTML = `<i class="fa-solid fa-cloud-arrow-up fa-beat"></i> <span>Guardando en Drive...</span>`;
+
+        const docData = {
+          tipo: docTipoActual,
+          numero: docNum,
+          fecha: document.getElementById("docFecha").value,
+          cliente: {
+            nombre: document.getElementById("cliNombre").value,
+            nif: document.getElementById("cliNif").value,
+            direccion: document.getElementById("cliDireccion").value
+          },
+          lineas: lineas,
+          iva: document.getElementById("ivaSelect").value,
+          total: document.getElementById("prevTotal").innerText
+        };
+
+        const payload = {
+          filename: filename,
+          pdfBase64: pdfBase64,
+          docData: docData
+        };
+
+        await fetch(CONFIG.appsScriptUrl, {
+          method: 'POST',
+          mode: 'no-cors',
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: JSON.stringify(payload)
+        });
+
+        if (docTipoActual === 'factura') {
+          baseFacturas = baseFacturas.filter(f => f.numero !== docNum);
+          baseFacturas.push(docData);
+          localStorage.setItem("facturas_db", JSON.stringify(baseFacturas));
+        } else {
+          basePresupuestos = basePresupuestos.filter(p => p.numero !== docNum);
+          basePresupuestos.push(docData);
+          localStorage.setItem("presupuestos_db", JSON.stringify(basePresupuestos));
+        }
+
+        alert(`¡Guardado! ${filename} se ha subido a tu Drive en formato A4 y se ha actualizado el historial.`);
+        recalcularNumeroActual();
+
+      } catch (err) {
+        preview.classList.remove("pdf-exporting");
+        alert("Error al subir a Google Drive: " + err.message);
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = originalText;
+      }
+    }
+
+    function abrirHistorialModal() {
+      const container = document.getElementById("historialListContainer");
+      container.innerHTML = "";
+      const todos = [...baseFacturas, ...basePresupuestos];
+
+      if (todos.length === 0) {
+        container.innerHTML = `<p class="text-slate-400 py-6 text-center">No hay documentos registrados aún.</p>`;
+      } else {
+        todos.reverse().forEach(d => {
+          const div = document.createElement("div");
+          div.className = "flex items-center justify-between p-3 border rounded-lg bg-slate-50";
+          div.innerHTML = `
+            <div>
+              <span class="font-bold text-slate-800 font-mono">${d.numero}</span>
+              <span class="text-slate-500 ml-2">(${d.fecha})</span>
+              <p class="text-slate-600 font-medium">${d.cliente?.nombre || 'Cliente sin nombre'}</p>
+            </div>
+            <div class="flex items-center space-x-2">
+              <span class="font-bold font-mono text-indigo-700">${d.total || ''}</span>
+              <button onclick="cargarDocumento('${d.numero}')" class="px-2.5 py-1 bg-white border border-slate-300 rounded hover:bg-slate-100 text-xs">Cargar</button>
+            </div>
+          `;
+          container.appendChild(div);
+        });
+      }
+      document.getElementById("modalHistorial").classList.remove("hidden");
+    }
+
+    function cerrarHistorialModal() {
+      document.getElementById("modalHistorial").classList.add("hidden");
+    }
+
+    function cargarDocumento(numero) {
+      const doc = [...baseFacturas, ...basePresupuestos].find(d => d.numero === numero);
+      if (!doc) return;
+
+      setDocTipo(doc.tipo);
+      document.getElementById("docNumero").value = doc.numero;
+      document.getElementById("docFecha").value = doc.fecha;
+      document.getElementById("cliNombre").value = doc.cliente.nombre || "";
+      document.getElementById("cliNif").value = doc.cliente.nif || "";
+      document.getElementById("cliDireccion").value = doc.cliente.direccion || "";
+      document.getElementById("ivaSelect").value = doc.iva || "21";
+      lineas = doc.lineas || [];
+      renderLineas();
+      cerrarHistorialModal();
+    }
+
+    function cargarConfigEnUI() {
+      document.getElementById("cfgNombre").value = CONFIG.nombre;
+      document.getElementById("cfgNif").value = CONFIG.nif;
+      document.getElementById("cfgDir").value = CONFIG.direccion;
+      document.getElementById("cfgUrl").value = CONFIG.appsScriptUrl;
+
+      document.getElementById("prevEmisorNombre").innerText = CONFIG.nombre;
+      document.getElementById("prevEmisorNif").innerText = "NIF: " + CONFIG.nif;
+      document.getElementById("prevEmisorDir").innerText = CONFIG.direccion;
+    }
+
+    function abrirConfigModal() { document.getElementById("modalConfig").classList.remove("hidden"); }
+    function cerrarConfigModal() { document.getElementById("modalConfig").classList.add("hidden"); }
+
+    function guardarConfig() {
+      CONFIG.nombre = document.getElementById("cfgNombre").value;
+      CONFIG.nif = document.getElementById("cfgNif").value;
+      CONFIG.direccion = document.getElementById("cfgDir").value;
+      CONFIG.appsScriptUrl = document.getElementById("cfgUrl").value;
+      localStorage.setItem("app_cfg", JSON.stringify(CONFIG));
+      cargarConfigEnUI();
+      cerrarConfigModal();
+    }
+  </script>
+</body>
+</html>
