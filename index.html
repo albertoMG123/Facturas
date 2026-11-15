@@ -8,41 +8,18 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <style>
-    @page {
-      size: A4 portrait;
-      margin: 0;
-    }
-
-    #preview-area {
-      width: 210mm;
-      min-height: 297mm;
-      padding: 16mm 18mm;
-      box-sizing: border-box;
-      background: #ffffff;
-    }
-
     @media print {
-      html, body {
-        width: 210mm;
-        height: 297mm;
-        margin: 0 !important;
-        padding: 0 !important;
-        background: #ffffff !important;
-      }
       body * { visibility: hidden; }
       #preview-area, #preview-area * { visibility: visible; }
       #preview-area {
-        position: fixed;
+        position: absolute;
         left: 0;
         top: 0;
-        width: 210mm !important;
-        height: 297mm !important;
-        min-height: 297mm !important;
-        margin: 0 !important;
-        padding: 16mm 18mm !important;
-        box-shadow: none !important;
-        border: none !important;
-        border-radius: 0 !important;
+        width: 100%;
+        margin: 0;
+        padding: 0;
+        box-shadow: none;
+        border: none;
       }
       .no-print { display: none !important; }
     }
@@ -165,8 +142,8 @@
     </section>
 
     <!-- Vista Previa / Factura A4 (Derecha) -->
-    <section class="lg:col-span-7 flex justify-center overflow-x-auto pb-4">
-      <div id="preview-area" class="bg-white rounded-xl border border-slate-200 shadow-lg text-slate-800 text-xs flex flex-col justify-between shrink-0">
+    <section class="lg:col-span-7 flex justify-center">
+      <div id="preview-area" class="w-full max-w-[210mm] bg-white rounded-xl border border-slate-200 shadow-lg p-8 sm:p-12 text-slate-800 text-xs min-h-[297mm] flex flex-col justify-between">
         
         <div>
           <!-- Cabecera de la factura -->
@@ -180,7 +157,7 @@
             </div>
 
             <!-- Datos Emisor -->
-            <div class="text-right space-y-0.5 text-slate-600 max-w-[55%]">
+            <div class="text-right space-y-0.5 text-slate-600">
               <h3 id="prevEmisorNombre" class="font-bold text-sm text-slate-900">Tu Nombre Autónomo</h3>
               <p id="prevEmisorNif">NIF: 12345678Z</p>
               <p id="prevEmisorDir">Valencia, España</p>
@@ -196,11 +173,11 @@
           </div>
 
           <!-- Tabla de Conceptos -->
-          <table class="w-full text-left mb-6 table-fixed">
+          <table class="w-full text-left mb-6">
             <thead>
               <tr class="border-b border-slate-300 text-slate-400 uppercase text-[10px] font-semibold">
-                <th class="py-2 w-auto">Descripción</th>
-                <th class="py-2 text-right w-14">Uds.</th>
+                <th class="py-2">Descripción</th>
+                <th class="py-2 text-right w-16">Uds.</th>
                 <th class="py-2 text-right w-24">Precio</th>
                 <th class="py-2 text-right w-24">Subtotal</th>
               </tr>
@@ -212,7 +189,7 @@
         </div>
 
         <!-- Totales -->
-        <div class="border-t border-slate-200 pt-4 flex justify-end mt-auto">
+        <div class="border-t border-slate-200 pt-4 flex justify-end">
           <div class="w-64 space-y-2">
             <div class="flex justify-between text-slate-600">
               <span>Base Imponible:</span>
@@ -446,10 +423,10 @@
 
         const tr = document.createElement("tr");
         tr.innerHTML = `
-          <td class="py-2.5 pr-3 font-medium break-words">${l.descripcion || "Sin descripción"}</td>
-          <td class="py-2.5 text-right font-mono align-top">${l.cantidad}</td>
-          <td class="py-2.5 text-right font-mono align-top">${l.precio.toFixed(2)} €</td>
-          <td class="py-2.5 text-right font-semibold font-mono align-top">${totalLinea.toFixed(2)} €</td>
+          <td class="py-2.5 font-medium">${l.descripcion || "Sin descripción"}</td>
+          <td class="py-2.5 text-right font-mono">${l.cantidad}</td>
+          <td class="py-2.5 text-right font-mono">${l.precio.toFixed(2)} €</td>
+          <td class="py-2.5 text-right font-semibold font-mono">${totalLinea.toFixed(2)} €</td>
         `;
         tbody.appendChild(tr);
       });
@@ -471,52 +448,17 @@
       btn.disabled = true;
       btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> <span>Generando PDF...</span>`;
 
-      // Creamos un contenedor limpio fuera del grid para evitar desplazamientos de html2canvas
-      const exportWrapper = document.createElement("div");
-      exportWrapper.style.position = "fixed";
-      exportWrapper.style.left = "0";
-      exportWrapper.style.top = "0";
-      exportWrapper.style.width = "210mm";
-      exportWrapper.style.height = "297mm";
-      exportWrapper.style.background = "#ffffff";
-      exportWrapper.style.zIndex = "-9999";
-      exportWrapper.style.overflow = "hidden";
-
-      const clone = preview.cloneNode(true);
-      clone.style.width = "210mm";
-      clone.style.height = "297mm";
-      clone.style.minHeight = "297mm";
-      clone.style.maxHeight = "297mm";
-      clone.style.margin = "0";
-      clone.style.boxShadow = "none";
-      clone.style.border = "none";
-      clone.style.borderRadius = "0";
-
-      exportWrapper.appendChild(clone);
-      document.body.appendChild(exportWrapper);
-
       try {
         const docNum = document.getElementById("docNumero").value || "documento";
         const filename = `${docNum}.pdf`;
 
-        const pdfBase64 = await html2pdf().from(clone).set({
-          margin: 0,
+        const pdfBase64 = await html2pdf().from(preview).set({
+          margin: 10,
           filename: filename,
           image: { type: 'jpeg', quality: 0.98 },
-          html2canvas: { 
-            scale: 2, 
-            useCORS: true,
-            scrollX: 0,
-            scrollY: 0,
-            x: 0,
-            y: 0,
-            width: clone.offsetWidth,
-            height: clone.offsetHeight
-          },
+          html2canvas: { scale: 2 },
           jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
         }).outputPdf('datauristring');
-
-        document.body.removeChild(exportWrapper);
 
         btn.innerHTML = `<i class="fa-solid fa-cloud-arrow-up fa-beat"></i> <span>Guardando en Drive...</span>`;
 
@@ -558,13 +500,10 @@
           localStorage.setItem("presupuestos_db", JSON.stringify(basePresupuestos));
         }
 
-        alert(`¡Guardado! ${filename} se ha subido a tu Drive en formato A4 y se ha actualizado el historial.`);
+        alert(`¡Guardado! ${filename} se ha subido a tu Drive y se ha actualizado el historial.`);
         recalcularNumeroActual();
 
       } catch (err) {
-        if (document.body.contains(exportWrapper)) {
-          document.body.removeChild(exportWrapper);
-        }
         alert("Error al subir a Google Drive: " + err.message);
       } finally {
         btn.disabled = false;
@@ -651,7 +590,7 @@
         localStorage.setItem("presupuestos_db", JSON.stringify(basePresupuestos));
 
         cerrarConfirmDelete();
-        abrirHistorialModal(); // Refresca la lista
+        abrirHistorialModal();
         recalcularNumeroActual();
       } catch (err) {
         alert("Error al borrar el documento: " + err.message);
